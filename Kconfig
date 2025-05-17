@@ -1,0 +1,3 @@
+config LFSM
+tristate "Link Finite State Machine"
+default m
