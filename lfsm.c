@@ -22,13 +22,6 @@ static const char * const link_state_str[] = {
     [LINK_STOPPING] = "LINK_STOPPING",
 };
 
-/* LFSM Actions */
-enum lfsm_action_type {
-    LFSM_ACT_LINK_UP,
-    LFSM_ACT_LINK_DOWN,
-    LFSM_ACT_MAX
-};
-
 static const char * const lfsm_action_str[] = {
     [LFSM_ACT_LINK_UP]   = "LINK_UP",
     [LFSM_ACT_LINK_DOWN] = "LINK_DOWN",
@@ -54,15 +47,15 @@ static struct kobject *lfsm_kobj;
 /* Notifier chain */
 static BLOCKING_NOTIFIER_HEAD(link_state_notifier_chain);
 
-int register_link_state_notifier(struct notifier_block *nb) {
+int lfsm_register_link_state_notifier(struct notifier_block *nb) {
     return blocking_notifier_chain_register(&link_state_notifier_chain, nb);
 }
-EXPORT_SYMBOL_GPL(register_link_state_notifier);
+EXPORT_SYMBOL_GPL(lfsm_register_link_state_notifier);
 
-int unregister_link_state_notifier(struct notifier_block *nb) {
+int lfsm_unregister_link_state_notifier(struct notifier_block *nb) {
     return blocking_notifier_chain_unregister(&link_state_notifier_chain, nb);
 }
-EXPORT_SYMBOL_GPL(unregister_link_state_notifier);
+EXPORT_SYMBOL_GPL(lfsm_unregister_link_state_notifier);
 
 /* Generic Netlink Definitions */
 static struct genl_family lfsm_genl_family;
@@ -124,11 +117,11 @@ static int lfsm_cmd_handler(struct sk_buff *skb, struct genl_info *info) {
 
     switch (info->genlhdr->cmd) {
     case LFSM_CMD_LINK_UP:
-        return link_up();
+        return lfsm_link_up();
     case LFSM_CMD_LINK_DOWN:
-        return link_down();
+        return lfsm_link_down();
     case LFSM_CMD_CANCEL:
-        cancel_lfsm_actions_and_force_down();
+        lfsm_force_down();
         return 0;
     default:
         return -EOPNOTSUPP;
@@ -192,6 +185,9 @@ static void lfsm_up_worker(struct work_struct *work)
     pr_info("LFSM: Link is UP\n");
     queue_work(lfsm_wq, &lfsm_worker);
     spin_unlock(&lfsm_lock);
+
+    lfsm_notify_state(LINK_UP);
+    blocking_notifier_call_chain(&link_state_notifier_chain, LINK_UP, NULL);
 }
 
 static void lfsm_down_worker(struct work_struct *work)
@@ -204,6 +200,9 @@ static void lfsm_down_worker(struct work_struct *work)
     pr_info("LFSM: Link is DOWN\n");
     queue_work(lfsm_wq, &lfsm_worker);
     spin_unlock(&lfsm_lock);
+
+    lfsm_notify_state(LINK_DOWN);
+    blocking_notifier_call_chain(&link_state_notifier_chain, LINK_DOWN, NULL);
 }
 
 // --- LFSM Dispatcher ---
@@ -266,7 +265,7 @@ out:
 }
 
 /**
- * link_up - Establishes a link or connection.
+ * lfsm_link_up - Establishes a link or connection.
  *
  * This function is responsible for initializing or bringing up a link.
  * The specific behavior depends on the implementation details within
@@ -274,7 +273,7 @@ out:
  *
  * Return: 0 on success, negative error code on failure.
  */
-int link_up(void)
+int lfsm_link_up(void)
 {
     unsigned long flags;
     int ret;
@@ -289,10 +288,10 @@ int link_up(void)
     spin_unlock_irqrestore(&lfsm_lock, flags);
     return ret;
 }
-EXPORT_SYMBOL_GPL(link_up);
+EXPORT_SYMBOL_GPL(lfsm_link_up);
 
 /**
- * link_down - Handles the event when a link goes down.
+ * lfsm_link_down - Handles the event when a link goes down.
  *
  * This function is called to perform necessary operations when the link
  * status changes to down. It may include cleanup, resource deallocation,
@@ -300,7 +299,7 @@ EXPORT_SYMBOL_GPL(link_up);
  *
  * Return: 0 on success, negative error code on failure.
  */
-int link_down(void)
+int lfsm_link_down(void)
 {
     unsigned long flags;
     int ret;
@@ -316,16 +315,16 @@ int link_down(void)
     spin_unlock_irqrestore(&lfsm_lock, flags);
     return ret;
 }
-EXPORT_SYMBOL_GPL(link_down);
+EXPORT_SYMBOL_GPL(lfsm_link_down);
 
 /**
- * get_link_state - Retrieve the current state of the link.
+ * lfsm_get_link_state - Retrieve the current state of the link.
  *
  * This function returns the current state of the link as an enum link_state value.
  *
  * Return: The current link state.
  */
-enum link_state get_link_state(void)
+enum link_state lfsm_get_link_state(void)
 {
     unsigned long flags;
     enum link_state st;
@@ -336,20 +335,18 @@ enum link_state get_link_state(void)
 
     return st;
 }
-EXPORT_SYMBOL_GPL(get_link_state);
+EXPORT_SYMBOL_GPL(lfsm_get_link_state);
 
 /**
- * cancel_lfsm_actions_and_force_down - Cancels ongoing LFSM actions and forces the system down
+ * lfsm_force_down - Forcefully shuts down the LFSM subsystem.
  *
- * This function is responsible for terminating any ongoing actions or operations
- * related to the LFSM (Lightweight Flash Storage Manager) subsystem and forces
- * the system or device into a down state. It is typically used during shutdown
- * or error handling to ensure that all LFSM activities are properly halted and
- * the system is safely transitioned to a non-operational state.
+ * This function initiates a forced shutdown of the lfsm subsystem. It 
+ * is typically used in scenarios where a graceful shutdown is not possible
+ * or when an emergency stop is required to prevent further operations.
  *
- * Context: May be called in situations requiring immediate shutdown or cleanup.
+ * Context: May be called in critical error handling paths.
  */
-void cancel_lfsm_actions_and_force_down(void)
+void lfsm_force_down(void)
 {
     cancel_work_sync(&lfsm_worker);
     cancel_work_sync(&lfsm_up_work);
@@ -363,12 +360,12 @@ void cancel_lfsm_actions_and_force_down(void)
     pr_info("LFSM: Cancelled all and forced link DOWN\n");
     spin_unlock(&lfsm_lock);
 }
-EXPORT_SYMBOL_GPL(cancel_lfsm_actions_and_force_down);
+EXPORT_SYMBOL_GPL(lfsm_force_down);
 
 // --- sysfs ---
 static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-    enum link_state s = get_link_state();
+    enum link_state s = lfsm_get_link_state();
     return sprintf(buf, "%s\n", (s < LINK_STATE_MAX) ? link_state_str[s] : "UNKNOWN");
 }
 static struct kobj_attribute state_attr = __ATTR_RO(state);
@@ -443,7 +440,7 @@ out:
 
 static void __exit lfsm_module_exit(void)
 {
-    cancel_lfsm_actions_and_force_down();
+    lfsm_force_down();
     sysfs_remove_group(lfsm_kobj, &lfsm_attr_group);
     kobject_put(lfsm_kobj);
     destroy_workqueue(lfsm_wq);

@@ -40,7 +40,7 @@ static struct notifier_block nb = {
     .notifier_call = my_link_notifier,
 };
 register_link_state_notifier(&nb);
-link_up();
+lfsm_link_up();
 ```
 
 ## Authors

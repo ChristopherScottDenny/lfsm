@@ -3,3 +3,7 @@
 *.d
 *.mod
 *.order
+*.ko
+*.mod.c
+Module.symvers
+lfsm_api.rst
