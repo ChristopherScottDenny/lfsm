@@ -4,6 +4,25 @@
 
 LFSM (Link Finite State Machine) is a Linux kernel module that manages the state of a logical link using a finite state machine. It provides a generic, thread-safe interface for transitioning the link between UP and DOWN states, with support for asynchronous actions, timeouts, sysfs introspection, and user-space notifications via Generic Netlink.
 
+## Building
+
+To build the LFSM kernel module, ensure you have the Linux kernel and build tools installed. Then, run the following command from the root of your kernel source tree:
+
+
+```sh
+make -j$(nproc) M=drivers/lfsm modules
+```
+
+## Install
+
+You can further install the module with the following commands:
+
+```sh
+make -j$(nproc) M=drivers/lfsm modules_install
+depmod
+modprobe lfsm
+```
+
 ## Features
 
 - Finite State Machine for link state transitions (`LINK_DOWN`, `LINK_STARTING`, `LINK_UP`, `LINK_STOPPING`)
