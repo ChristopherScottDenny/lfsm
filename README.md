@@ -62,6 +62,37 @@ register_link_state_notifier(&nb);
 lfsm_link_up();
 ```
 
+## System Component Diagram
+
+```mermaid
+graph TD
+    A[FSM Kernel Module] --> B[Workqueue + kfifo]
+    A --> C[Sysfs Interface]
+    A --> D[Netlink Multicast fsm_notify]
+    A --> E[Notifier Chain]
+
+    D --> F[Python Listener / Logger]
+    D --> G[FSM API FastAPI]
+    G --> H[REST Clients curl, UI]
+    G --> F
+    F --> I[SQLite DB fsm_events.db]
+```
+
+## State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> LINK_DOWN
+
+    LINK_DOWN --> LINK_STARTING: link_up()
+    LINK_STARTING --> LINK_UP: transition complete
+    LINK_STARTING --> LINK_DOWN: timeout or cancel
+
+    LINK_UP --> LINK_STOPPING: link_down()
+    LINK_STOPPING --> LINK_DOWN: transition complete
+    LINK_STOPPING --> LINK_DOWN: timeout or cancel
+```
+
 ## Authors
 
 - Christopher Denny <christopherscottdenny@gmail.com>
